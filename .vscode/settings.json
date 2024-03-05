@@ -1,0 +1,21 @@
+{
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+    "files.associations": {
+        "ctype.h": "c",
+        "signal.h": "c",
+        "types.h": "c",
+        "unistd.h": "c",
+        "csapp.h": "c",
+        "dirent.h": "c",
+        "sigaction.h": "c",
+        "errno.h": "c",
+        "signum-generic.h": "c",
+        "stdlib.h": "c",
+        "string.h": "c",
+        "getopt_posix.h": "c",
+        "features.h": "c",
+        "stdio.h": "c"
+    },
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true
+}
