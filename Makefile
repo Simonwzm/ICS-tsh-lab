@@ -32,7 +32,7 @@ test02:
 test03:
 	$(DRIVER) -t trace03.txt -s $(TSH) -a $(TSHARGS)
 test04:
-	$(DRIVER) -t trace04.txt -s $(TSH) -a $(TSHARGS)
+	$(DRIVER) -t trace04.txt -s $(TSH) -a $(TSHARGS) 
 test05:
 	$(DRIVER) -t trace05.txt -s $(TSH) -a $(TSHARGS)
 test06:
