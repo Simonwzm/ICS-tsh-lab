@@ -9,7 +9,7 @@
                 "-g",
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}.out", // Output file with .out extension
+                "${fileDirname}/${fileBasenameNoExtension}", // Output file with .out extension
                 "-L",
                 ".",
                 "-lcsapp", // Ensure there's no space between -l and csapp

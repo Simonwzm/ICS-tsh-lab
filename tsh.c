@@ -3,6 +3,7 @@
  * 
  * <Put your name and login ID here>
  */
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -96,6 +97,10 @@ void listjobs(struct job_t *jobs);
 void usage(void);
 void unix_error(char *msg);
 void app_error(char *msg);
+
+void quit_from_keyboard(void);
+
+
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 volatile int fg_pid = -1;
@@ -195,31 +200,37 @@ void eval(char *cmdline)
     char* argv[MAXARGS];
 
     bg = parseline(cmdline, argv);
+    if (argv[0] == NULL) // blank line
+    {return;}    
+
     printf("first arg %s\n", argv[0]);
     printf("test %d\n", strcmp(argv[0], "quit"));
     
-    if (argv[0] == NULL) // blank line
-    {printf("null args");return;}    
 
     if (strcmp(argv[0], "quit")==0)
     {
         Sio_puts("get quit\n");
-        exit(-1);
+        quit_from_keyboard();
+        // exit(-1);
 
     }
     if (strcmp(argv[0], "jobs")==0)
     {
         Sio_puts("get jobs\n");
         listjobs(jobs);
-        exit(-1);
+        return;
     }
+    //cont a bck proc
     if (strcmp(argv[0], "bg")==0)
     {
-        exit(-1);
+        do_bgfg(argv);
+        return;
+
     }
     if (strcmp(argv[0], "fg")==0)
     {
-        exit(-1);
+        do_bgfg(argv);
+        return;
     }
 
     Sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
@@ -359,7 +370,97 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
-    return;
+    int next_state = (strcmp(argv[0], "bg")==0) ? BG : FG;
+    
+    if (argv[1]==NULL)
+    {
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+    else if (argv[1][0]=='%')
+    {
+        if (!isdigit(argv[1][1]))
+        {
+            // not a job id , not null, unsupport type    
+            printf("unsupport parameter type of %s", argv[1]);
+            return;
+        }
+
+        // get job id
+        int jid = atoi((char*)(argv[1]+1));
+
+        Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+        if (getjobjid(jobs, jid))
+        {
+            //found job in job list
+            getjobjid(jobs, jid)->state = next_state;
+            if (next_state == FG)
+            {
+                printf("move bg (jid = %d) to fg\n", jid);
+                fg_pid = getjobjid(jobs, jid)->pid;
+                Sigprocmask(SIG_SETMASK, &mask_one, NULL);
+
+                Kill(-fg_pid, SIGCONT);
+                waitfg(fg_pid);
+                Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+                return;
+            }
+            else
+            {
+                printf("move bg (jid = %d) to bg\n", jid);
+                assert(getjobjid(jobs, jid)->pid > 0);
+                int pid = -getjobjid(jobs, jid)->pid;
+                Kill(pid, SIGCONT);
+                
+                Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+                return;
+            }
+        }
+        else if (isdigit(argv[1][0]))
+        {
+            //get pid
+            int pid = atoi((char*)(argv[1]+1));
+            Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+            if (getjobpid(jobs, pid))
+            {
+                //found job in job list
+                getjobpid(jobs, pid)->state = next_state;
+                if (next_state == FG)
+                {
+                    printf("move bg (pid = %d) to fg\n", pid);
+                    fg_pid = getjobpid(jobs, pid)->pid;
+                    Sigprocmask(SIG_SETMASK, &mask_one, NULL);
+                    waitfg(fg_pid);
+                    Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+                    return;
+                }
+                else
+                {
+                    printf("move bg (pid = %d) to bg\n", pid);
+                    Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+                    return;
+                }
+            }
+            else
+            {
+                printf("can't find proc pid = %d\n", pid);
+                Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+                return;
+            }
+        }
+        else
+        {
+            // not a job id , not null, unsupport type    
+            printf("unsupport parameter %s\n", argv[1]);
+            return;
+        }
+    }
+    else
+    {
+        // not a job id , not null, unsupport type    
+        printf("unsupport parameter type\n");
+        return;
+    }
 }
 
 /* 
@@ -367,6 +468,7 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    assert(fg_pid >0);
     printf("wait for ");
     listjobs(jobs);
     // Sigsuspend(&prev_one);
@@ -448,8 +550,23 @@ void sigchld_handler(int sig)
 void sigint_handler(int sig) 
 {
     printf("caught sigint from keyboard\n");
-    exit(1);
+    if (fg_pid == -1)
+    {
 
+        Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+        listjobs(jobs);
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+        printf("no foreground job\n");
+        return;
+    }
+    else
+    {
+        Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+        Kill(-fg_pid, SIGINT);
+        // getjobpid(jobs, fg_pid)->state = UN
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+        return; 
+    }
 }
 
 /*
@@ -459,7 +576,25 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
-    return;
+    printf("caught sigstp from keyboard\n");
+    if (fg_pid == -1)
+    {
+
+        Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+        listjobs(jobs);
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+        printf("no foreground job\n");
+        fflush(stdout);
+        return;
+    }
+    else
+    {
+        Sigprocmask(SIG_SETMASK, &mask_all, &prev_one);
+        Kill(-fg_pid, SIGSTOP);
+        // getjobpid(jobs, fg_pid)->state = UN
+        Sigprocmask(SIG_SETMASK, &prev_one, NULL);
+        return; 
+    }
 }
 
 /*********************
@@ -682,6 +817,11 @@ handler_t *Signal(int signum, handler_t *handler)
 void sigquit_handler(int sig) 
 {
     printf("Terminating after receipt of SIGQUIT signal\n");
+    exit(1);
+}
+
+void quit_from_keyboard()
+{
     exit(1);
 }
 
